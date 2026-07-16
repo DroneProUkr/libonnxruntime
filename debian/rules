@@ -1,0 +1,84 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/architecture.mk
+
+# LTO is disabled deliberately: upstream builds a version script over a huge static
+# dep graph and LTO regularly breaks that link. Upstream's own -O3 is kept (Debian
+# strips it to -O2 for policy reasons; here inference throughput on the Pi matters).
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all optimize=-lto
+
+# The upstream build compiles with -Werror, and bookworm's GCC 12 emits well-known false
+# positives at -O3 on std::string internals — e.g. -Wrestrict inside GetFunctionIdentifier
+# ("__builtin_memcpy accessing 9223372036854775810 or more bytes"), which is fatal.
+# Debian dodges this by building at -O2 plus a gcc-false-positive.patch of per-file
+# pragmas; keeping -O3 here, the equivalent is to silence the bogus diagnostics.
+# -Wno-<warning> and NOT -Wno-error=<warning> is deliberate: upstream's -Werror lands
+# AFTER these flags on the command line and would re-promote a merely-exempted warning,
+# but it cannot promote a warning that is never emitted at all.
+export DEB_CXXFLAGS_MAINT_APPEND = -Wno-restrict -Wno-array-bounds -Wno-stringop-overflow
+
+# Upstream's CMakeLists lives in cmake/, not at the top of the source tree, and the
+# whole upstream tree is a submodule under onnxruntime/. dbs-changelog also reads
+# --sourcedirectory to find the tree it derives the package version from, so this is
+# what makes the package version track the submodule's git tag (v1.27.1 -> 1.27.1).
+SRCDIR   := onnxruntime/cmake
+BUILDDIR := obj-$(DEB_HOST_MULTIARCH)
+
+# debhelper defaults to one compile job per core, but ORT's translation units pull in the
+# vendored abseil/onnx/protobuf headers and peak around 1.5 GB each — on a many-core builder
+# that outruns RAM and the machine dies in swap rather than failing honestly (32 jobs needs
+# ~48 GB). Cap the jobs, not the cores. This is a no-op where cores < MAX_PARALLEL (dh uses
+# the lower of the two), so CI runners are unaffected. Raise it on a big-RAM builder with:
+#   dbs -DMAX_PARALLEL=16
+MAX_PARALLEL ?= 8
+
+# Deps are NOT taken from the system: bookworm's onnx/abseil/flatbuffers are an ORT
+# ~1.12-era stack (and libsafeint-dev does not exist there at all), so upstream's own
+# pinned deps are fetched and linked statically. That is why the runtime package needs
+# nothing but libc/libstdc++, unlike Debian's, which links system libonnx/libprotobuf.
+# The one exception is protoc: cross builds need a HOST protoc, and bookworm's 3.21.12
+# is an exact match for upstream's pinned protobuf v21.12 (cmake/deps.txt).
+# debhelper passes -DFETCHCONTENT_FULLY_DISCONNECTED=ON because a Debian build must not
+# reach the network. This package deliberately does the opposite (see above): with it left
+# on, nothing is downloaded and configure dies on the first vendored dep with
+# "add_library cannot create ALIAS target flatbuffers::flatbuffers". dh's flags come first
+# on the command line, so repeating the option here overrides it.
+CMAKE_FLAGS = \
+	-DFETCHCONTENT_FULLY_DISCONNECTED=OFF \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_INSTALL_INCLUDEDIR=include \
+	-DCMAKE_INSTALL_LIBDIR=lib/$(DEB_HOST_MULTIARCH) \
+	-DBUILD_PKGCONFIG_FILES=ON \
+	-Donnxruntime_BUILD_SHARED_LIB=ON \
+	-Donnxruntime_BUILD_UNIT_TESTS=OFF \
+	-Donnxruntime_BUILD_BENCHMARKS=OFF \
+	-Donnxruntime_ENABLE_PYTHON=OFF \
+	-Donnxruntime_USE_FULL_PROTOBUF=ON \
+	-Donnxruntime_CROSS_COMPILING=ON \
+	-DONNX_CUSTOM_PROTOC_EXECUTABLE=/usr/bin/protoc \
+	-DPython_EXECUTABLE=/usr/bin/python3 \
+	$(NULL)
+
+%:
+	dh $@ --buildsystem=cmake+ninja --sourcedirectory=$(SRCDIR) --builddirectory=$(BUILDDIR) \
+		--max-parallel=$(MAX_PARALLEL)
+
+override_dh_auto_configure:
+	# The runtime package name encodes the SONAME, which debian/patches/set-soversion.patch
+	# pins to <major>.<minor>. Bumping the submodule therefore renames the package; fail
+	# loudly here rather than silently shipping a mis-named library.
+	set -e; \
+	vf=onnxruntime/VERSION_NUMBER; \
+	ver=$$(head -1 $$vf | tr -d '[:space:]'); \
+	want=$$(echo $$ver | cut -d. -f1,2); \
+	got=$$(sed -n 's/^Package: libonnxruntime\([0-9][0-9.]*\)$$/\1/p' debian/control); \
+	test -n "$$ver" || { echo "rules: cannot read version from $$vf" >&2; exit 1; }; \
+	test -n "$$got" || { echo "rules: no 'Package: libonnxruntime<X.Y>' in debian/control" >&2; exit 1; }; \
+	[ "$$got" = "$$want" ] || { \
+		echo "rules: debian/control ships libonnxruntime$$got but upstream is $$ver (want libonnxruntime$$want)" >&2; \
+		echo "rules: rename the package in debian/control and its .install file" >&2; exit 1; }; \
+	echo "rules: package libonnxruntime$$got matches upstream $$ver"
+	dh_auto_configure -- $(CMAKE_FLAGS)
+
+override_dh_missing:
+	dh_missing --fail-missing

@@ -1,0 +1,6 @@
+usr/lib/*/libonnxruntime.so.*
+# The provider plugins are dlopen()ed at runtime and carry no SONAME/version suffix, so
+# the glob above misses them. They belong in the runtime package, not -dev: the official
+# libonnxruntime1.21 ships libonnxruntime_providers_shared.so (and _dnnl.so, which we do
+# not build) exactly here.
+usr/lib/*/libonnxruntime_providers_*.so

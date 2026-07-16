@@ -1,0 +1,18 @@
+# Build tooling that must exist on the amd64 BUILD HOST, not in the arm64 sysroot.
+# dbs auto-detects only Architecture:all build-deps; everything below is Architecture:any,
+# so it would otherwise land in the sysroot where it cannot execute during a cross build.
+
+# Cross builds need a protoc that runs on the host. bookworm's 3.21.12 is an exact match
+# for upstream's pinned protobuf v21.12 (onnxruntime/cmake/deps.txt), so no version skew.
+protobuf-compiler
+
+# Upstream runs tools/ci_build/gen_def.py at build time to generate the symbol version script.
+python3
+
+# cmake's FetchContent downloads the pinned deps over https during configure.
+ca-certificates
+
+# bookworm ships cmake 3.25.1; upstream requires cmake_minimum_required(3.28).
+# bookworm-backports has 3.31.6. The "pkg/suite" form pins that one package to that release
+# and is ignored on other suites (trixie's own cmake is 3.31, so it needs nothing here).
+cmake/bookworm-backports

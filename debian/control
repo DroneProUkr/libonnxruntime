@@ -1,0 +1,50 @@
+Source: libonnxruntime
+Priority: optional
+Maintainer: special-delivery <development@special-delivery.org>
+Build-Depends:
+ debhelper-compat (= 13),
+# cmake documents the dependency and lands in the cross sysroot; the cmake that
+# actually RUNS is the build-host one — see debian/dbs-host-deps. bookworm's 3.25
+# is older than upstream's cmake_minimum_required(3.28), so it comes from backports.
+ cmake,
+ ninja-build,
+ zlib1g-dev,
+Standards-Version: 4.6.0
+Section: libs
+X-Style: black
+
+Package: libonnxruntime1.27
+Architecture: any
+Multi-Arch: same
+Section: libs
+Pre-Depends:
+ ${misc:Pre-Depends},
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+Description: cross-platform inference and training ML accelerator (shared lib)
+ ONNX Runtime is a performance-focused complete scoring engine for Open Neural
+ Network Exchange (ONNX) models, with an open extensible architecture to
+ continually address the latest developments in AI and Deep Learning. ONNX
+ Runtime stays up to date with the ONNX standard with complete implementation of
+ all ONNX operators, and supports all ONNX releases (1.2+) with both future and
+ backwards compatibility.
+ .
+ This package provides the shared library.
+
+Package: libonnxruntime-dev
+Architecture: any
+Multi-Arch: same
+Section: libdevel
+Depends:
+ libonnxruntime1.27 (= ${binary:Version}),
+ ${misc:Depends},
+Description: cross-platform inference and training ML accelerator (dev files)
+ ONNX Runtime is a performance-focused complete scoring engine for Open Neural
+ Network Exchange (ONNX) models, with an open extensible architecture to
+ continually address the latest developments in AI and Deep Learning. ONNX
+ Runtime stays up to date with the ONNX standard with complete implementation of
+ all ONNX operators, and supports all ONNX releases (1.2+) with both future and
+ backwards compatibility.
+ .
+ This package provides the development files for libonnxruntime.

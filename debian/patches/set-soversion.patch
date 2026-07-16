@@ -1,0 +1,45 @@
+Description: set SOVERSION for shared library. Upstream has simplified the
+ SONAME without saying anything about the API/ABI stability, see:
+ https://github.com/microsoft/onnxruntime/pull/21339
+ Until it's clarified let's reuse the previous behavior to avoid unexpected
+ breakage. This will require transition for every release, but it's safer.
+ .
+ Without this, upstream's "SOVERSION 1" gives libonnxruntime.so.1, and the binary
+ package would have to be named libonnxruntime1 — diverging from the official Debian
+ package, which is libonnxruntime1.21 in trixie (SONAME libonnxruntime.so.1.21).
+ .
+ VERSION_MAJOR_PART/VERSION_MINOR_PART are parsed out of ORT_VERSION in
+ cmake/CMakeLists.txt long before onnxruntime.cmake is included, so they are 1 and 27.
+ .
+ Taken from Debian's onnxruntime 1.21.0+dfsg-1 and adapted to the 1.27.1 context
+ (upstream moved the guards from "NOT CMAKE_SYSTEM_NAME MATCHES AIX" to
+ "onnxruntime_BUILD_SHARED_LIB" / "NOT WIN32"). Paths are prefixed with onnxruntime/
+ because upstream is a submodule under this source root. The file has CRLF endings.
+Author: Shengqi Chen <harry-chen@outlook.com>
+Origin: https://sources.debian.org/src/onnxruntime/1.21.0+dfsg-1/debian/patches/set-soversion.patch/
+Forwarded: not-needed
+
+--- a/onnxruntime/cmake/onnxruntime.cmake
++++ b/onnxruntime/cmake/onnxruntime.cmake
+@@ -68,9 +68,11 @@
+     list(APPEND SYMBOL_FILES "${ONNXRUNTIME_ROOT}/core/providers/${f}/symbols.txt")
+   endforeach()
+ 
++  set(ORT_SOVERSION_NUMBER_FILE "${CMAKE_CURRENT_BINARY_DIR}/VERSION_NUMBER")
++  file(WRITE "${ORT_SOVERSION_NUMBER_FILE}" "${VERSION_MAJOR_PART}.${VERSION_MINOR_PART}")
+   add_custom_command(OUTPUT ${SYMBOL_FILE} ${CMAKE_CURRENT_BINARY_DIR}/generated_source.c
+     COMMAND ${Python_EXECUTABLE} "${REPO_ROOT}/tools/ci_build/gen_def.py"
+-      --version_file "${ONNXRUNTIME_ROOT}/../VERSION_NUMBER" --src_root "${ONNXRUNTIME_ROOT}"
++      --version_file "${ORT_SOVERSION_NUMBER_FILE}" --src_root "${ONNXRUNTIME_ROOT}"
+       --config ${ONNXRUNTIME_PROVIDER_NAMES} --style=${OUTPUT_STYLE} --output ${SYMBOL_FILE}
+       --output_source ${CMAKE_CURRENT_BINARY_DIR}/generated_source.c
+     DEPENDS ${SYMBOL_FILES}
+@@ -286,7 +288,7 @@
+     PUBLIC_HEADER "${ONNXRUNTIME_PUBLIC_HEADERS}"
+     LINK_DEPENDS ${SYMBOL_FILE}
+     VERSION ${ORT_VERSION}
+-    SOVERSION 1
++    SOVERSION "${VERSION_MAJOR_PART}.${VERSION_MINOR_PART}"
+     FOLDER "ONNXRuntime")
+ else()
+   # Omit the SOVERSION setting in Windows build
