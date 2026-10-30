@@ -22,6 +22,10 @@ Pre-Depends:
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
+# trixie's own libonnxruntime1.21 (which gstreamer1.0-plugins-bad depends on) ships
+# libonnxruntime_providers_shared.so at the same path: this package may take the file over.
+Replaces:
+ libonnxruntime1.21,
 Description: cross-platform inference and training ML accelerator (shared lib)
  ONNX Runtime is a performance-focused complete scoring engine for Open Neural
  Network Exchange (ONNX) models, with an open extensible architecture to
